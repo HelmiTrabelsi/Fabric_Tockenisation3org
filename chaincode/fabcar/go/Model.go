@@ -8,7 +8,9 @@ type Token struct {
 	Data      string `json:"data"`
 	Creation_date  time.Time   `json:"Creation_date"`
 	Hash string `json:hash`
-	Trace  []string `json:"trace"`
+	Output  []string `json:"output"`
+	Input  []string `json:"input"`
+	Finalized bool `json:finalised`
 }
 
 type Consent struct {

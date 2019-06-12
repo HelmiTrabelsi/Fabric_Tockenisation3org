@@ -29,12 +29,9 @@ package main
  * 2 specific Hyperledger Fabric specific libraries for Smart Contracts
  */
 import (
-	//"bytes"
-	//"image"
-	//"os"
 	"encoding/json"
 	"fmt"
-	"errors"
+	//"errors"
 	"strconv"
 	"time"
 	"github.com/segmentio/ksuid"
@@ -42,7 +39,7 @@ import (
 	sc "github.com/hyperledger/fabric/protos/peer"
 	"crypto/sha256"
 	"encoding/base64"
-	"github.com/hyperledger/fabric/core/chaincode/lib/cid"
+	//"github.com/hyperledger/fabric/core/chaincode/lib/cid"
 )
 
 // Define the Smart Contract structure
@@ -80,6 +77,10 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) sc.Response 
 		return s.CreateTokenFromOther(APIstub, args)
 	} else if function == "GiveConsentToOrg" {
 		return s.GiveConsentToOrg(APIstub, args)
+	} else if function == "AddInput" {
+		return s.AddInput(APIstub, args)
+	} else if function == "FinalizeToken" {
+		return s.FinalizeToken(APIstub, args)
 	}
 
 	
@@ -89,17 +90,17 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) sc.Response 
 
 func (s *SmartContract) CreateToken(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
 
-	if len(args) != 1 {
-		return shim.Error("Incorrect number of arguments. Expecting 1")
-	}
+
 	timestamp:= time.Now()
 	id := ksuid.New().String()
 	owner, err := CallerCN(APIstub)
 	if err != nil {
 		return shim.Error("Error getting from owner")
 	}
-	trace:=[]string{}
-	var token= Token{Id:id,Creator:owner, Data:args[0], Creation_date:timestamp,Trace:trace }
+	output:=[]string{}
+	input:=[]string{}
+	finalized, _ := strconv.ParseBool(args[1])
+	var token= Token{Id:id,Creator:owner, Data:args[0], Creation_date:timestamp,Output:output,Finalized:finalized,Input:input}
 
 	hasher:=id+timestamp.String()+token.Creator
 	hash := sha256.New()
@@ -120,68 +121,43 @@ func (s *SmartContract) CreateTokenFromOther(APIstub shim.ChaincodeStubInterface
 
 	timestamp:= time.Now()
 	id := ksuid.New().String()
-	owner, err := CallerCN(APIstub)
-	if err != nil {
-		return shim.Error("Error getting from owner")
-	}
-
-	data:=""
+	data:="this is token2"
 	caller , _ :=CallerCN(APIstub)
-	var  consent Consent
-	 
-	for  i:=0;i<len(args); i++{
-		consent,err= get_consent(APIstub, args[i]+"a")
-		if err != nil {
-			shim.Error("can't find consent")
-		}
-
-	}	
-	mspid, _ := cid.GetMSPID(APIstub)
-	if consent.ToOrg && mspid==consent.Requestor && consent.NumAuthCall>0{
-		update_auth_call(APIstub, consent.Id) 
-		//consentAsBytes, _ := json.Marshal(consent)
-		for  i:=0;i<len(args); i++{
-			token1,err:= get_token(APIstub, args[i])
-			if err != nil {
-				shim.Error("can't find token")
-			}
-			data=data+" "+token1.Creator
-			token1.Trace=append(token1.Trace,id +" "+caller)
-			tokenAsBytes1, _ := json.Marshal(token1)
-			APIstub.PutState(token1.Id,tokenAsBytes1 )
-		}           
-		
-	} else if consent.Requestor!=caller || consent.NumAuthCall<1 {
-		return shim.Error(fmt.Sprintf("this user is not allowed to use this token", caller))
-	}else { 
-		update_auth_call(APIstub, consent.Id)            
-		for  i:=0;i<len(args); i++{
-			token1,err:= get_token(APIstub, args[i])
-			if err != nil {
-				shim.Error("can't find token")
-			}
-			data=data+" "+token1.Creator
-			token1.Trace=append(token1.Trace,id +" "+caller)
-			tokenAsBytes1, _ := json.Marshal(token1)
-			APIstub.PutState(token1.Id,tokenAsBytes1 )
-		}
-	} 
-	
-
-	var token= Token{Id:id,Creator:owner, Data:data, Creation_date:timestamp }
-
-	hasher:=id+timestamp.String()+token.Creator
+	//create Hash
+	hasher:=id+timestamp.String()+caller
 	hash := sha256.New()
     hash.Write([]byte (hasher))
 	sha := base64.URLEncoding.EncodeToString(hash.Sum(nil))
-	token.Hash= sha
+	finalized, _ := strconv.ParseBool(args[0])
+	var token= Token{Id:id,Creator:caller, Data:data, Creation_date:timestamp,Hash:sha,Finalized:finalized }	
+	var consent Consent
+	
+	
+	
+	for  i:=1;i<len(args); i++{
+		token1,_:= get_token(APIstub, args[i])
+		_,err:=is_it_auth (APIstub,args[i])
+		if err !=nil{
+			return shim.Error(fmt.Sprintf("Error: ",err))
+		}else if !token1.Finalized{
+			return shim.Error("This Token is not Finalized")
+		}else {
+			consent,_= get_consent(APIstub, args[i]+"a")
+			update_auth_call(APIstub, consent.Id) 
+			
 
-	tokenAsBytes, _ := json.Marshal(token)
-	errr := APIstub.PutState(id,tokenAsBytes)
-	if errr != nil {
-		fmt.Printf("Error creating new Token: %s", errr)
+			data=data+" "+token1.Creator
+			token1.Output=append(token1.Output,id)
+			token.Input=append(token.Input,args[i])
+			tokenAsBytes1, _ := json.Marshal(token1)
+			APIstub.PutState(token1.Id,tokenAsBytes1 )
+
+		}
 	}
+	tokenAsBytes, _ := json.Marshal(token)
+	APIstub.PutState(token.Id,tokenAsBytes)
 	return shim.Success(tokenAsBytes)
+	
 }
 
 func (s *SmartContract) GetToken(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
@@ -202,22 +178,16 @@ func (s *SmartContract) GetToken(APIstub shim.ChaincodeStubInterface, args []str
 		return shim.Error("consent not found")
 	}
 	json.Unmarshal(consentAsBytes, &consent)
-	caller , _ :=CallerCN(APIstub)
-	mspid, _ := cid.GetMSPID(APIstub)
-	if token.Creator==caller {
- 		return shim.Success(tokenAsBytes)
-	}
-	if consent.ToOrg && mspid==consent.Requestor && consent.NumAuthCall>0{
-		update_auth_call(APIstub, consent.Id)            
-		return shim.Success(consentAsBytes)
-	} else if consent.Requestor!=caller || consent.NumAuthCall<2 {
-		return shim.Error(fmt.Sprintf("this user is not allowed to read this token", consent.Requestor))
-	}else { 
+	
+
+	_,err=is_it_auth (APIstub,token.Id)
+	if err !=nil{
+		return shim.Error(fmt.Sprintf("Error: ",err))
+	} else {
 		update_auth_call(APIstub, consent.Id)            
 		return shim.Success(tokenAsBytes)
-	} 
+	}
 		
-	
 }
 
 func (s *SmartContract) deleteToken(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
@@ -237,81 +207,98 @@ func (s *SmartContract) deleteToken(APIstub shim.ChaincodeStubInterface, args []
 	if err != nil {
 		return shim.Error("Failed to delete Token from the state")
 	}
-
-	return shim.Success(nil)
-}
-
-func get_token(APIstub shim.ChaincodeStubInterface, id string) (Token,error) {
-	var  token Token
-	tokenAsBytes, err := APIstub.GetState(id)  
-	json.Unmarshal(tokenAsBytes, &token)   
-
-	if err != nil {                                          
-		return token, errors.New("Failed to find marble - " + id)
-	}
-	             
-	return token,nil
-}
-
-func get_consent(APIstub shim.ChaincodeStubInterface, id string) (Consent,error) {
-	var  consent Consent
-	consentAsBytes, err := APIstub.GetState(id)  
-	json.Unmarshal(consentAsBytes, &consent)   
-
-	if err != nil {                                          
-		return consent, errors.New("Failed to find marble - " + id)
-	}
-	             
-	return consent,nil
+	IDAsBytes, _ := json.Marshal(token.Id)
+	return shim.Success(IDAsBytes)
 }
 
 func (s *SmartContract) GiveConsent(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
 
-	if len(args) != 3 {
-		return shim.Error("Incorrect number of arguments. Expecting 3")
-	}
-
+	invoker, err :=CallerCN(APIstub)
 	token,err :=get_token(APIstub, args[0])
 	if err != nil {
 		return shim.Error("Token not found")
 	}
-	timestamp:= time.Now()
-	num, err := strconv.Atoi(args[2])
-	var consent= Consent{Id:token.Id+"a" ,TokenId:token.Id ,Owner:token.Creator ,Requestor:args[1] ,NumAuthCall:num ,Timestamp:timestamp, ToOrg:false }
-	consentAsBytes, _ := json.Marshal(consent)
-	APIstub.PutState(consent.Id,consentAsBytes)
-	return shim.Success(consentAsBytes)
-}	
+	if invoker==token.Creator{
 
-
-func update_auth_call(APIstub shim.ChaincodeStubInterface, consentId string) bool {
-	consent,_ :=get_consent(APIstub, consentId)
-	consent.NumAuthCall=consent.NumAuthCall-1
-	consentAsBytes, _ := json.Marshal(consent)
-	APIstub.PutState(consent.Id,consentAsBytes)
-	return true
+		timestamp:= time.Now()
+		num, _ := strconv.Atoi(args[2])
+		var consent= Consent{Id:token.Id+"a" ,TokenId:token.Id ,Owner:token.Creator ,Requestor:args[1] ,NumAuthCall:num ,Timestamp:timestamp, ToOrg:false }
+		consentAsBytes, _ := json.Marshal(consent)
+		APIstub.PutState(consent.Id,consentAsBytes)
+		return shim.Success(consentAsBytes)
+	} else {
+		return shim.Error("This user is not the owner of this token")
+	}
 }
 
 func (s *SmartContract) GiveConsentToOrg(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
 
-	if len(args) != 3 {
-		return shim.Error("Incorrect number of arguments. Expecting 3")
+	invoker, err :=CallerCN(APIstub)
+	token,err :=get_token(APIstub, args[0])
+	if err != nil {
+		return shim.Error("Token not found")
 	}
+	if invoker==token.Creator{
+		timestamp:= time.Now()
+		num, _ := strconv.Atoi(args[2])
+		var consent= Consent{Id:token.Id+"a" ,TokenId:token.Id ,Owner:token.Creator ,Requestor:args[1] ,NumAuthCall:num ,Timestamp:timestamp, ToOrg:true }
+		consentAsBytes, _ := json.Marshal(consent)
+		APIstub.PutState(consent.Id,consentAsBytes)
+		return shim.Success(consentAsBytes)
+	} else {
+		return shim.Error("This user is not the owner of this token")
+	}
+}
+
+func (s *SmartContract) AddInput(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
+
+	caller , _ :=CallerCN(APIstub)
 
 	token,err :=get_token(APIstub, args[0])
 	if err != nil {
 		return shim.Error("Token not found")
 	}
-	timestamp:= time.Now()
-	num, err := strconv.Atoi(args[2])
-	var consent= Consent{Id:token.Id+"a" ,TokenId:token.Id ,Owner:token.Creator ,Requestor:args[1] ,NumAuthCall:num ,Timestamp:timestamp, ToOrg:true }
-	consentAsBytes, _ := json.Marshal(consent)
-	APIstub.PutState(consent.Id,consentAsBytes)
-	return shim.Success(consentAsBytes)
+
+	
+	for  i:=1;i<len(args); i++{
+		token2,err :=get_token(APIstub, args[i])
+		if err != nil {
+			return shim.Error("Token not found")
+		}
+		_,err=is_it_auth (APIstub,token2.Id)
+		if err !=nil || caller!=token.Creator{
+			return shim.Error(fmt.Sprintf("Error: ",err))
+		} else {
+			update_auth_call(APIstub,args[i]+"a")  
+			token2.Output=append(token2.Output,token.Id)
+			token.Input=append(token.Input,token2.Id)
+			token.Data=token.Data+" "+token2.Data 	
+			tokenAsBytes, _ := json.Marshal(token)
+			token2AsBytes, _ := json.Marshal(token2)
+			APIstub.PutState(token.Id,tokenAsBytes )
+			APIstub.PutState(token2.Id,token2AsBytes )
+			return shim.Success(tokenAsBytes)
+		}
+	}
+	return shim.Success(nil)
 }
 
+func (s *SmartContract) FinalizeToken(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
 
-
+	invoker, err :=CallerCN(APIstub)
+	token,err :=get_token(APIstub, args[0])
+	if err != nil {
+		return shim.Error("Token not found")
+	}
+	if invoker==token.Creator{
+		token.Finalized=true
+		tokenAsBytes, _ := json.Marshal(token)
+		APIstub.PutState(token.Id,tokenAsBytes)
+		return shim.Success(tokenAsBytes)
+	} else {
+		return shim.Error("This user is not the owner of this token")
+	}
+}
 
 // The main function is only relevant in unit test mode. Only included here for completeness.
 func main() {
@@ -322,3 +309,5 @@ func main() {
 		fmt.Printf("Error creating new Smart Contract: %s", err)
 	}
 }
+
+

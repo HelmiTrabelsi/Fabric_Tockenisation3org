@@ -19,11 +19,14 @@ package main
 import (
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 	"github.com/hyperledger/fabric/protos/msp"
-   	//"github.com/hyperledger/fabric/core/chaincode/lib/cid" 
+	"encoding/json"
+	"errors"
+	//"fmt"
+	"github.com/hyperledger/fabric/core/chaincode/lib/cid" 
+	
    	
 )
 
@@ -61,4 +64,59 @@ func CallerCN(stub shim.ChaincodeStubInterface) (string, error) {
 		return "", err
 	}
 	return cn, nil
+}
+
+func update_auth_call(APIstub shim.ChaincodeStubInterface, consentId string) bool {
+	consent,_ :=get_consent(APIstub, consentId)
+	consent.NumAuthCall=consent.NumAuthCall-1
+	consentAsBytes, _ := json.Marshal(consent)
+	APIstub.PutState(consent.Id,consentAsBytes)
+	return true
+}
+
+func get_token(APIstub shim.ChaincodeStubInterface, id string) (Token,error) {
+	var  token Token
+	tokenAsBytes, err := APIstub.GetState(id)  
+	json.Unmarshal(tokenAsBytes, &token)   
+
+	if err != nil {                                          
+		return token, errors.New("Failed to find marble - " + id)
+	}
+	             
+	return token,nil
+}
+
+func get_consent(APIstub shim.ChaincodeStubInterface, id string) (Consent,error) {
+	var  consent Consent
+	consentAsBytes, err := APIstub.GetState(id)  
+	json.Unmarshal(consentAsBytes, &consent)   
+
+	if err != nil {                                          
+		return consent, errors.New("Failed to find marble - " + id)
+	}
+	             
+	return consent,nil
+}
+
+func is_it_auth(APIstub shim.ChaincodeStubInterface, tokenID string) (bool,error) {
+	caller , _ :=CallerCN(APIstub)
+	token,_ :=get_token(APIstub, tokenID)
+	consent,err:= get_consent(APIstub, tokenID+"a")
+	if err != nil {
+		return false, errors.New("can't find consent for this token")
+	}
+	mspid, _ := cid.GetMSPID(APIstub)
+	if caller == token.Creator{
+		return true,nil
+	}else if consent.ToOrg && mspid==consent.Requestor && consent.NumAuthCall>0{
+		return true,nil	
+	} else if consent.Requestor!=caller || consent.NumAuthCall<1 {
+		err:="This user is not allowed to use this token : "+ tokenID
+		return false, errors.New(err)
+		//return false,fmt.Errorf("This user is not allowed to use this token : ", tokenID)
+	}else if consent.Requestor==caller || consent.NumAuthCall>0{ 	 
+		return true,nil
+	}else {
+		 return false, errors.New("Something wrong")
+	}
 }
