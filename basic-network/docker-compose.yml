@@ -15,7 +15,7 @@ services:
       - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
       - FABRIC_CA_SERVER_CA_NAME=ca.example.com
       - FABRIC_CA_SERVER_CA_CERTFILE=/etc/hyperledger/fabric-ca-server-config/ca.org1.com-cert.pem
-      - FABRIC_CA_SERVER_CA_KEYFILE=/etc/hyperledger/fabric-ca-server-config/56cad9021fb5d99313238610fab3a918f4d90c5b32dbb6fd58d4d9a0180a7ec9_sk
+      - FABRIC_CA_SERVER_CA_KEYFILE=/etc/hyperledger/fabric-ca-server-config/66bf659e6efa57ab5bddd59919aed55f532fab989e93980e0e0a8a7fd214e08d_sk
     ports:
       - "7054:7054"
     command: sh -c 'fabric-ca-server start -b admin:adminpw'
@@ -79,7 +79,8 @@ services:
         - ./crypto-config/peerOrganizations/org1.com/peers/peer0.org1.com/msp:/etc/hyperledger/msp/peer
         - ./crypto-config/peerOrganizations/org1.com/users:/etc/hyperledger/msp/users
         - ./config:/etc/hyperledger/configtx
-        - ./../chaincode/:/opt/gopath/src/github.com/
+        - ./../chaincode/fabcar:/opt/gopath/src/github.com/
+        - ./../../go/src/github.com:/opt/gopath/src/github.com/
         - ./../../go/:/opt/gopath
     depends_on:
       - orderer.example.com
@@ -120,7 +121,8 @@ services:
         - ./crypto-config/peerOrganizations/org2.com/peers/peer0.org2.com/msp:/etc/hyperledger/msp/peer
         - ./crypto-config/peerOrganizations/org2.com/users:/etc/hyperledger/msp/users
         - ./config:/etc/hyperledger/configtx
-        - ./../chaincode/:/opt/gopath/src/github.com/
+        - ./../chaincode/fabcar:/opt/gopath/src/github.com/
+        - ./../../go/src/github.com:/opt/gopath/src/github.com/
         - ./../../go/:/opt/gopath
     depends_on:
       - orderer.example.com
@@ -161,7 +163,8 @@ services:
         - ./crypto-config/peerOrganizations/GDPR.com/peers/peer0.GDPR.com/msp:/etc/hyperledger/msp/peer
         - ./crypto-config/peerOrganizations/GDPR.com/users:/etc/hyperledger/msp/users
         - ./config:/etc/hyperledger/configtx
-        - ./../chaincode/:/opt/gopath/src/github.com/
+        - ./../chaincode/fabcar:/opt/gopath/src/github.com/
+        - ./../../go/src/github.com/:/opt/gopath/src/github.com/
         - ./../../go/:/opt/gopath
     depends_on:
       - orderer.example.com
@@ -199,7 +202,8 @@ services:
     command: /bin/bash
     volumes:
         - /var/run/:/host/var/run/
-        - ./../chaincode/:/opt/gopath/src/github.com/
+        - ./../chaincode/fabcar:/opt/gopath/src/github.com/
+        - ./../../go/src/github.com:/opt/gopath/src/github.com/
         - ./crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/
     networks:
         - basic

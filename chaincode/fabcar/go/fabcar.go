@@ -81,7 +81,12 @@ func (s *SmartContract) Invoke(APIstub shim.ChaincodeStubInterface) sc.Response 
 		return s.AddInput(APIstub, args)
 	} else if function == "FinalizeToken" {
 		return s.FinalizeToken(APIstub, args)
+	}else if function == "RemoveInput" {
+		return s.RemoveInput(APIstub, args)
+	} else if function == "SetAuthCall" {
+		return s.SetAuthCall(APIstub, args)
 	}
+	
 
 	
 
@@ -121,20 +126,20 @@ func (s *SmartContract) CreateTokenFromOther(APIstub shim.ChaincodeStubInterface
 
 	timestamp:= time.Now()
 	id := ksuid.New().String()
-	data:="this is token2"
+	data:=args[0]
 	caller , _ :=CallerCN(APIstub)
 	//create Hash
 	hasher:=id+timestamp.String()+caller
 	hash := sha256.New()
     hash.Write([]byte (hasher))
 	sha := base64.URLEncoding.EncodeToString(hash.Sum(nil))
-	finalized, _ := strconv.ParseBool(args[0])
+	finalized, _ := strconv.ParseBool(args[1])
 	var token= Token{Id:id,Creator:caller, Data:data, Creation_date:timestamp,Hash:sha,Finalized:finalized }	
 	var consent Consent
 	
 	
 	
-	for  i:=1;i<len(args); i++{
+	for  i:=2;i<len(args); i++{
 		token1,_:= get_token(APIstub, args[i])
 		_,err:=is_it_auth (APIstub,args[i])
 		if err !=nil{
@@ -266,21 +271,25 @@ func (s *SmartContract) AddInput(APIstub shim.ChaincodeStubInterface, args []str
 			return shim.Error("Token not found")
 		}
 		_,err=is_it_auth (APIstub,token2.Id)
-		if err !=nil || caller!=token.Creator{
+		if err !=nil || caller!=token.Creator {
 			return shim.Error(fmt.Sprintf("Error: ",err))
-		} else {
-			update_auth_call(APIstub,args[i]+"a")  
+		}else if token.Finalized{ 	 
+			err:="This token is finalized  "
+			return shim.Error(fmt.Sprintf("Error: ",err))
+		}
+		 else {
 			token2.Output=append(token2.Output,token.Id)
 			token.Input=append(token.Input,token2.Id)
-			token.Data=token.Data+" "+token2.Data 	
+			token.Data=token.Data+" "+token2.Data 
 			tokenAsBytes, _ := json.Marshal(token)
 			token2AsBytes, _ := json.Marshal(token2)
 			APIstub.PutState(token.Id,tokenAsBytes )
-			APIstub.PutState(token2.Id,token2AsBytes )
+			APIstub.PutState(token2.Id,token2AsBytes)
 			return shim.Success(tokenAsBytes)
 		}
 	}
-	return shim.Success(nil)
+	tokenAsBytes, _ := json.Marshal(token)
+	return shim.Success(tokenAsBytes)
 }
 
 func (s *SmartContract) FinalizeToken(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
@@ -299,6 +308,54 @@ func (s *SmartContract) FinalizeToken(APIstub shim.ChaincodeStubInterface, args 
 		return shim.Error("This user is not the owner of this token")
 	}
 }
+
+func (s *SmartContract) RemoveInput(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
+
+	caller , _ :=CallerCN(APIstub)
+
+	token,err :=get_token(APIstub, args[0])
+	if err != nil {
+		return shim.Error("Token not found")
+	}
+	token2,err :=get_token(APIstub, args[1])
+	if err != nil {
+		return shim.Error("Token not found")
+	}
+
+	_,err=is_it_auth (APIstub,token2.Id)
+		if err !=nil || caller!=token.Creator{
+			return shim.Error(fmt.Sprintf("Error: ",err))
+		} else if token.Finalized{ 	 
+			err:="This token is finalized "
+			return shim.Error(fmt.Sprintf("Error: ",err))
+		}
+		else {
+			IndexToRemove:=indexOf(args[1],token.Input)
+			token2.Output=RemoveIndex(token2.Output, IndexToRemove)
+			token.Input= RemoveIndex(token.Input, IndexToRemove)	
+			tokenAsBytes, _ := json.Marshal(token)
+			token2AsBytes, _ := json.Marshal(token2)
+			APIstub.PutState(token.Id,tokenAsBytes )
+			APIstub.PutState(token2.Id,token2AsBytes)
+			return shim.Success(tokenAsBytes)
+		}
+	
+	tokenAsBytes, _ := json.Marshal(token)
+	return shim.Success(tokenAsBytes)
+}
+
+func (s *SmartContract) SetAuthCall(APIstub shim.ChaincodeStubInterface, args []string) sc.Response {
+	consent,err :=get_consent(APIstub, args[0]+"a")
+	if err != nil {
+		return shim.Error("Consent not found")
+	}
+	consent.NumAuthCall,_=strconv.Atoi(args[1])
+	consentAsBytes, _ := json.Marshal(consent)
+	APIstub.PutState(consent.Id,consentAsBytes)
+	return shim.Success(consentAsBytes)
+}
+
+
 
 // The main function is only relevant in unit test mode. Only included here for completeness.
 func main() {

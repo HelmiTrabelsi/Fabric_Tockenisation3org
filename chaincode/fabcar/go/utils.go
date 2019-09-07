@@ -119,4 +119,18 @@ func is_it_auth(APIstub shim.ChaincodeStubInterface, tokenID string) (bool,error
 	}else {
 		 return false, errors.New("Something wrong")
 	}
+
+}
+
+func indexOf(element string, data []string) (int) {
+	for k, v := range data {
+		if element == v {
+			return k
+		}
+	}
+	return -1    //not found.
+}
+
+func RemoveIndex(s []string, index int) []string {
+	return append(s[:index], s[index+1:]...)
 }
